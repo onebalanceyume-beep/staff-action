@@ -204,7 +204,7 @@ button{cursor:pointer;border:none;background:none;touch-action:manipulation}
 <div class="wrap" id="view-goal" style="display:none"></div>
 
 <div class="foot">
-  <span>ワンバランス 提案ボード v1.5</span>
+  <span>ワンバランス 提案ボード v1.6</span>
   <button onclick="forceUpdate()">最新版に更新</button>
 </div>
 
@@ -2653,6 +2653,7 @@ var currentTab = "biz";
 var editingGoalId = null;
 var editingPlan = { goalId:null, planId:null };
 var editingStep = { goalId:null, planId:null, stepId:null, atIndex:null };
+var DRAFT_KEY = "onebalance_proposal_app_v1_draft";
 
 /* ---------- storage ---------- */
 function load(){
@@ -2960,7 +2961,7 @@ function resizeImage(file, maxSide, quality, cb){
 
 /* ---------- overlay / toast ---------- */
 function openOverlay(id){ document.getElementById(id).classList.add("show"); }
-function closeOverlay(id){ document.getElementById(id).classList.remove("show"); }
+function closeOverlay(id){ document.getElementById(id).classList.remove("show"); clearDraft(); }
 var toastTimer=null;
 function toast(msg){
   var t=document.getElementById("toast");
@@ -2969,8 +2970,54 @@ function toast(msg){
   toastTimer=setTimeout(function(){ t.classList.remove("show"); },1900);
 }
 [].forEach.call(document.querySelectorAll(".overlay"),function(ov){
-  ov.addEventListener("click",function(e){ if(e.target===ov) ov.classList.remove("show"); });
+  ov.addEventListener("click",function(e){ if(e.target===ov){ ov.classList.remove("show"); clearDraft(); } });
 });
+
+/* ---------- draft (操作中の入力を消さない) ---------- */
+function val(id){ var e=document.getElementById(id); return e?e.value:""; }
+function setVal(id,v){ var e=document.getElementById(id); if(e) e.value=(v||""); }
+function saveDraft(){
+  var ov=document.querySelector(".overlay.show");
+  if(!ov) return;
+  var id=ov.id, d=null;
+  if(id==="itemOverlay") d={type:"item",ctx:{bizId:editingItem.bizId,itemId:editingItem.itemId},v:{title:val("itemTitle"),memo:val("itemMemo"),url:val("itemUrl"),img:tmpItemImg}};
+  else if(id==="bizOverlay") d={type:"biz",ctx:{id:editingBizId},v:{name:val("bizName"),logo:tmpLogo}};
+  else if(id==="goalOverlay") d={type:"goal",ctx:{id:editingGoalId},v:{name:val("goalName")}};
+  else if(id==="planOverlay") d={type:"plan",ctx:{goalId:editingPlan.goalId,planId:editingPlan.planId},v:{name:val("planName")}};
+  else if(id==="stepOverlay") d={type:"step",ctx:{goalId:editingStep.goalId,planId:editingStep.planId,stepId:editingStep.stepId,atIndex:editingStep.atIndex},v:{text:val("stepText")}};
+  else return;
+  try{ localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); }catch(e){}
+}
+function clearDraft(){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
+function restoreDraft(){
+  var raw; try{ raw=localStorage.getItem(DRAFT_KEY); }catch(e){ return; }
+  if(!raw) return;
+  var d; try{ d=JSON.parse(raw); }catch(e){ clearDraft(); return; }
+  if(!d||!d.type) return;
+  try{
+    if(d.type==="item"){
+      if(!findBiz(d.ctx.bizId)){ clearDraft(); return; }
+      openItemModal(d.ctx.bizId, d.ctx.itemId);
+      setVal("itemTitle",d.v.title); setVal("itemMemo",d.v.memo); setVal("itemUrl",d.v.url);
+      tmpItemImg=d.v.img||null; refreshItemImgPrev();
+    } else if(d.type==="biz"){
+      openBizModal(d.ctx.id);
+      setVal("bizName",d.v.name); tmpLogo=d.v.logo||null; refreshLogoPrev();
+    } else if(d.type==="goal"){
+      switchTab("goal"); openGoalModal(d.ctx.id); setVal("goalName",d.v.name);
+    } else if(d.type==="plan"){
+      if(!findGoal(d.ctx.goalId)){ clearDraft(); return; }
+      switchTab("goal"); openPlanModal(d.ctx.goalId,d.ctx.planId); setVal("planName",d.v.name);
+    } else if(d.type==="step"){
+      if(!findPlan(d.ctx.goalId,d.ctx.planId)){ clearDraft(); return; }
+      switchTab("goal"); openStepModal(d.ctx.goalId,d.ctx.planId,d.ctx.atIndex,d.ctx.stepId); setVal("stepText",d.v.text);
+    }
+    toast("入力中の内容を復元しました");
+  }catch(e){ clearDraft(); }
+}
+document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="hidden") saveDraft(); });
+window.addEventListener("pagehide", saveDraft);
+document.addEventListener("input", saveDraft);
 
 /* ---------- cache update ---------- */
 function forceUpdate(){
@@ -3176,6 +3223,7 @@ function toggleStep(goalId, planId, stepId){
 /* ---------- init ---------- */
 load();
 render();
+restoreDraft();
 </script>
 </body>
 </html>
